@@ -84,6 +84,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--tungsten); }
 .pane { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
 #script { flex: 1; min-height: 220px; width: 100%; resize: none; padding: 12px; background: var(--ink); border: 1px solid var(--rule); font: 15px/1.55 var(--read); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; flex: none; }
 .stat { font: 12px/1.5 var(--num); color: var(--muted); font-variant-numeric: tabular-nums; }
 .stat strong { color: var(--tungsten); font-weight: 500; }
 .hint { margin: 0; color: var(--muted); font-size: 13px; }
@@ -136,6 +137,7 @@ input[type=range] { width: 100%; accent-color: var(--tungsten); margin: 0; }
   :root { --size: 30px; }
   .push { margin-left: 0; }
 }
+@media (pointer: coarse) { #script, select { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { .rec .tally i { animation: none; } }
 </style>
 </head>
@@ -167,6 +169,12 @@ input[type=range] { width: 100%; accent-color: var(--tungsten); margin: 0; }
     </div>
 
     <section class="pane" id="pane-script" role="tabpanel" aria-labelledby="tab-script">
+      <div class="tools">
+        <button class="btn small primary" id="pasteBtn">Paste my script</button>
+        <button class="btn small" id="clearBtn">Clear</button>
+        <button class="btn small" id="undoBtn" hidden>Undo</button>
+      </div>
+      <p class="hint" id="pasteMsg" role="status" hidden></p>
       <textarea id="script" spellcheck="true" aria-label="Your script"></textarea>
       <div class="stat" id="scriptStat"></div>
       <p class="hint"><code>[pause]</code> shows as a small cue and <code># Heading</code> as a label. Neither counts toward run time. Click any paragraph on the monitor to jump there.</p>
@@ -350,6 +358,24 @@ let saveT;
 $('script').value = S.script;
 $('script').addEventListener('input', e => { S.script = e.target.value; render(); clearTimeout(saveT); saveT = setTimeout(save, 400); });
 
+let undoText = null;
+function note(m) { $('pasteMsg').textContent = m; $('pasteMsg').hidden = !m; }
+function putScript(text) { S.script = text; $('script').value = text; render(); save(); }
+function replaceScript(text, msg) { undoText = S.script; putScript(text); $('undoBtn').hidden = false; note(msg); }
+$('pasteBtn').onclick = async () => {
+  try {
+    const t = await navigator.clipboard.readText();
+    if (!t.trim()) { note('Your clipboard is empty. Copy your script first, then tap Paste my script.'); return; }
+    replaceScript(t.replace(/\r\n/g, '\n'), 'Script replaced.');
+  } catch (e) {
+    $('script').focus();
+    note('Your browser blocked the paste. Touch and hold inside the box below, then choose Paste.');
+  }
+};
+$('clearBtn').onclick = () => { replaceScript('', 'Script cleared.'); $('script').focus(); };
+$('undoBtn').onclick = () => { putScript(undoText); $('undoBtn').hidden = true; note(''); };
+$('script').addEventListener('input', () => { $('undoBtn').hidden = true; note(''); });
+
 function setWpm(v) { S.wpm = Math.min(260, Math.max(60, v)); apply(); save(); }
 function setSize(v) { S.size = Math.min(110, Math.max(20, v)); apply(); save(); }
 function toggleEye() {
@@ -371,9 +397,14 @@ function showTab(name) {
   TABS.forEach(t => { $('tab-' + t).setAttribute('aria-selected', t === name); $('pane-' + t).hidden = t !== name; });
 }
 TABS.forEach(t => $('tab-' + t).onclick = () => showTab(t));
-function setPanel(open) { app.classList.toggle('closed', !open); $('togglePanel').textContent = open ? 'Hide panel' : 'Show panel'; }
+const narrow = () => innerWidth < 820;
+function setPanel(open) {
+  app.classList.toggle('closed', !open);
+  $('togglePanel').textContent = narrow() ? (open ? 'Close script' : 'Edit script') : (open ? 'Hide panel' : 'Show panel');
+}
 const panelOpen = () => !app.classList.contains('closed');
-$('togglePanel').onclick = () => setPanel(!panelOpen());
+$('togglePanel').onclick = () => { const open = !panelOpen(); setPanel(open); if (open && narrow()) showTab('script'); };
+addEventListener('resize', () => setPanel(panelOpen()));
 if (innerWidth < 820) setPanel(false);
 function toggleFull() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
